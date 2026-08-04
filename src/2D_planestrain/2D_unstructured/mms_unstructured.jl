@@ -78,9 +78,9 @@ end
 
 function exactu(x, z, e, EToDomain)
     if EToDomain[e] == 1
-        uexact = 0 .+ β .* x .+ γ .* z .+ ϵ .* sin.(pi * x ./ L) .* sin.(b1 .* 2 .* pi * z ./ L)
+        uexact = 1 .+ β .* x .+ γ .* z .+ ϵ .* sin.(pi * x ./ L) .* sin.(b1 .* 2 .* pi * z ./ L)
     else
-        uexact = 0 .+ ν .* x .+ α .* z .+ ϵ .* cos.(pi * x ./ L) .* cos.(b1 .* 2 .*pi * z ./ L) # never getting here.
+        uexact = 2 .+ ν .* x .+ α .* z .+ ϵ .* cos.(pi * x ./ L) .* cos.(b1 .* 2 .*pi * z ./ L) # never getting here.
     end
     return uexact[:]
 end
@@ -128,9 +128,9 @@ end
 
 function exactw(x, z, e, EToDomain)
     if EToDomain[e] == 1
-        wexact = 0 .+ β .* x .+ γ .* z .+ ϵ .* cos.(pi * x ./ L) .* cos.(b1 .* 2 .* pi * z ./ L)
+        wexact = 3 .+ β .* x .+ γ .* z .+ ϵ .* cos.(pi * x ./ L) .* cos.(b1 .* 2 .* pi * z ./ L)
     else
-        wexact = 0 .+ ν .* x .+ α .* z .+ ϵ .* sin.(pi * x ./ L) .* cos.(b1 .* 2 .*pi * z ./ L) # never getting here.
+        wexact = 4 .+ ν .* x .+ α .* z .+ ϵ .* sin.(pi * x ./ L) .* cos.(b1 .* 2 .*pi * z ./ L) # never getting here.
     end
     return wexact[:]
 end
@@ -175,7 +175,7 @@ function exactw_xz(x, z, e, EToDomain)
     end
 end
 
-function source(x, z, e, EToDomain)
+function source(x, z, e, EToDomain) # this should operate in local orientation
     c = exact_lambda(x, z) .+ 2 .* exact_mu(x, z)
     cx = exact_lambda_x(x, z) .+ 2 .* exact_mu_x(x, z)
     cz = exact_lambda_z(x, z) .+ 2 .* exact_mu_z(x, z)
@@ -217,10 +217,10 @@ function exact(x, z, e, EToDomain)
     return [e1 e2]
 end
 
-function exact_traction(x, y, nx, ny, e, EToDomain)
+function exact_traction(x, y, nx, ny, e, EToDomain) #operates in local orientaion
 
 
-    c = exact_lambda(x, y) + 2 * exact_mu(x, y)
+    c = exact_lambda(x, y) .+ 2 * exact_mu(x, y)
     mu = exact_mu(x, y)
     lam = exact_lambda(x, y)
 
@@ -229,8 +229,8 @@ function exact_traction(x, y, nx, ny, e, EToDomain)
     sig_zz = lam .*  exactu_x(x, y,  e, EToDomain) .+ c .* exactw_z(x, y,  e, EToDomain) 
         
 
-    T1 = nx .* sig_xx + ny .* sig_xz
-    T2 = nx .* sig_xz + ny .* sig_zz
+    T1 = nx .* sig_xx .+ ny .* sig_xz
+    T2 = nx .* sig_xz .+ ny .* sig_zz
 
     T = [T1[:] T2[:]]
 
@@ -267,6 +267,7 @@ function planestrain_solve(Nr, Ns, SBPp, verts, EToV, FToB, EToF, FToE, FToLF, E
         (x1,x2,x3,x4) = verts[1, EToV[:, e]] 
         (y1,y2,y3,y4) = verts[2, EToV[:, e]]
 
+   
         # Details of transfinite interpolation: straight edges:
         # x-parameterization on each face
         ex = [(α) -> x1 * (1 .- α) / 2 + x3 * (1 .+ α) / 2,
@@ -308,11 +309,19 @@ function planestrain_solve(Nr, Ns, SBPp, verts, EToV, FToB, EToF, FToE, FToLF, E
         lop[e] = locoperator(SBPp, Nr[e], Ns[e], exact_mu, exact_lambda, metrics, FToB[EToF[:, e]]) 
     end
 
+    # Calculate neighboring penalty parameters and add to lop 
+    for e = 1:nelems
+        lop[e].neighborZ  .= calculate_neighbors(lop, e, FToB, EToF, FToE, FToLF, EToO)
+    end
+    
   
+
+
     # Assemble the global volume operator and factor:
     # HERE:
     Mo = global_operator(lop, vstarts, FToB, FToE, FToLF, EToO, EToS, Nr, Ns)
     M = lu(Mo)
+
 
     # Get a unique array indices for the faces corresponding to the fault/jump interface
     FToδstarts = bcstarts(FToB, FToE, FToLF, (RS_FAULT, VP_FAULT), Nr, Ns)
@@ -321,55 +330,66 @@ function planestrain_solve(Nr, Ns, SBPp, verts, EToV, FToB, EToF, FToE, FToLF, E
     VNp = vstarts[nelems+1]-1
     δNp = FToδstarts[nfaces+1]-1
     
-    # define the data for the jump in displacement on fault interface
+    # define the data for the jump in displacement on fault interface, 
+    # orientation must align with minus side
     δ = zeros(δNp, 2)
     for f = 1:nfaces
       if FToB[f] ∈ (RS_FAULT, VP_FAULT)
         (em, ep) = FToE[:, f]
         (lfm, lfp) = FToLF[:, f]
-        (xf, yf) = lop[em].facecoord
+        (xfm, yfm) = lop[em].facecoord
+        (xfp, yfp) = lop[ep].facecoord
 
-        exactm = exact(xf[lfm], yf[lfm], em, EToDomain)
-        exactp = exact(xf[lfm], yf[lfm], ep, EToDomain)
+        exactm = exact(xfm[lfm], yfm[lfm], em, EToDomain)
+        exactp = exact(xfp[lfp], yfp[lfp], ep, EToDomain) #
+    
         um = exactm[:, 1]
         wm = exactm[:, 2]
         up = exactp[:, 1]
         wp = exactp[:, 2]
 
 
-        # always define δ as the displacement on minus side minus displacement on plus, to match A&D
-        @views δ[FToδstarts[f]:(FToδstarts[f+1]-1), 1] = um - up
-        @views δ[FToδstarts[f]:(FToδstarts[f+1]-1), 2] = wm - wp
-            
-        
+        # always define δ as the displacement on plus side minus displacment on minus
+        # align it with the minus side
+
+         if EToO[lfp, ep] #check if orientation matches, always set up θ to align with minus side
+            @views δ[FToδstarts[f]:(FToδstarts[f+1]-1), 1] = up - um
+            @views δ[FToδstarts[f]:(FToδstarts[f+1]-1), 2] = wp - wm
+        else
+            @views δ[FToδstarts[f]:(FToδstarts[f+1]-1), 1] = up[end:-1:1] - um   
+            @views δ[FToδstarts[f]:(FToδstarts[f+1]-1), 2] = wp[end:-1:1] - wm   
+        end
+
       end
     end
   
     # define the data for the jump in traction data on fault interface
+    # must align with minus side
     θ = zeros(δNp, 2)
     for f = 1:nfaces
         if FToB[f] ∈ (RS_FAULT, VP_FAULT)
         (em, ep) = FToE[:, f]
         (lfm, lfp) = FToLF[:, f]
-        (xf, yf) = lop[em].facecoord
+        (xfm, yfm) = lop[em].facecoord
+        (xfp, yfp) = lop[ep].facecoord
 
-        cm = exact_lambda(xf[lfm], yf[lfm]) .+ 2 .* exact_mu(xf[lfm], yf[lfm])
-        mum = exact_mu(xf[lfm], yf[lfm])
-        lamm = exact_lambda(xf[lfm], yf[lfm])
+        cm = exact_lambda(xfm[lfm], yfm[lfm]) .+ 2 .* exact_mu(xfm[lfm], yfm[lfm])
+        mum = exact_mu(xfm[lfm], yfm[lfm])
+        lamm = exact_lambda(xfm[lfm], yfm[lfm])
 
-        cp = exact_lambda(xf[lfm], yf[lfm]) .+ 2 .* exact_mu(xf[lfm], yf[lfm])
-        mup = exact_mu(xf[lfm], yf[lfm])
-        lamp = exact_lambda(xf[lfm], yf[lfm])
+        cp = exact_lambda(xfp[lfp], yfp[lfp]) .+ 2 .* exact_mu(xfp[lfp], yfp[lfp])
+        mup = exact_mu(xfp[lfp], yfp[lfp])
+        lamp = exact_lambda(xfp[lfp], yfp[lfp])
 
-        sig_xx_minus = cm .*  exactu_x(xf[lfm], yf[lfm], em, EToDomain) .+ lamm .*  exactw_z(xf[lfm], yf[lfm], em, EToDomain) 
-        sig_xx_plus = cp .*  exactu_x(xf[lfm], yf[lfm], ep, EToDomain) .+ lamp .*  exactw_z(xf[lfm], yf[lfm], ep, EToDomain) 
+        sig_xx_minus = cm .*  exactu_x(xfm[lfm], yfm[lfm], em, EToDomain) .+ lamm .*  exactw_z(xfm[lfm], yfm[lfm], em, EToDomain) 
+        sig_xx_plus = cp .*  exactu_x(xfp[lfp], yfp[lfp], ep, EToDomain) .+ lamp .*  exactw_z(xfp[lfp], yfp[lfp], ep, EToDomain) 
 
-        sig_xz_minus = mum .*  exactu_z(xf[lfm], yf[lfm], em, EToDomain) .+ mum .*  exactw_x(xf[lfm], yf[lfm], em, EToDomain) 
-        sig_xz_plus =  mup .*  exactu_z(xf[lfm], yf[lfm], ep, EToDomain) .+ mup .*  exactw_x(xf[lfm], yf[lfm], ep, EToDomain) 
+        sig_xz_minus = mum .*  exactu_z(xfm[lfm], yfm[lfm], em, EToDomain) .+ mum .*  exactw_x(xfm[lfm], yfm[lfm], em, EToDomain) 
+        sig_xz_plus =  mup .*  exactu_z(xfp[lfp], yfp[lfp], ep, EToDomain) .+ mup .*  exactw_x(xfp[lfp], yfp[lfp], ep, EToDomain) 
 
 
-        sig_zz_minus = lamm .*  exactu_x(xf[lfm], yf[lfm], em, EToDomain) .+ cm .*  exactw_z(xf[lfm], yf[lfm], em, EToDomain) 
-        sig_zz_plus =  lamp .*  exactu_x(xf[lfm], yf[lfm], ep, EToDomain) .+ cp .*  exactw_z(xf[lfm], yf[lfm], ep, EToDomain) 
+        sig_zz_minus = lamm .*  exactu_x(xfm[lfm], yfm[lfm], em, EToDomain) .+ cm .*  exactw_z(xfm[lfm], yfm[lfm], em, EToDomain) 
+        sig_zz_plus =  lamp .*  exactu_x(xfp[lfp], yfp[lfp], ep, EToDomain) .+ cp .*  exactw_z(xfp[lfp], yfp[lfp], ep, EToDomain) 
         
     
 
@@ -379,27 +399,35 @@ function planestrain_solve(Nr, Ns, SBPp, verts, EToV, FToB, EToF, FToE, FToLF, E
         T1p = lop[ep].nx[lfp] .* sig_xx_plus + lop[ep].ny[lfp] .* sig_xz_plus
         T2p = lop[ep].nx[lfp] .* sig_xz_plus + lop[ep].ny[lfp] .* sig_zz_plus
         
-        @views θ[FToδstarts[f]:(FToδstarts[f+1]-1), 1] = T1m + T1p
-                
-        @views θ[FToδstarts[f]:(FToδstarts[f+1]-1), 2] = T2m + T2p
+        if EToO[lfp, ep] #check if orientation matches, always set up θ to align with minus side
+            @views θ[FToδstarts[f]:(FToδstarts[f+1]-1), 1] = T1m + T1p        
+            @views θ[FToδstarts[f]:(FToδstarts[f+1]-1), 2] = T2m + T2p
+        else
+            @views θ[FToδstarts[f]:(FToδstarts[f+1]-1), 1] = T1m + T1p[end:-1:1]       
+            @views θ[FToδstarts[f]:(FToδstarts[f+1]-1), 2] = T2m + T2p[end:-1:1]  
+        end
+
 
         end
     end
 
+    # δ and θ are the global data, and they are always aligned with minues side
+    # in_jump tranforms the data locally to match local orientation
+    # in_jump and in_traction jump just take the global data and negate/reverse it if need be.
     # define the interface jump in displacement function
     in_jump      = (lf, x, y, e, δ, θ) -> begin
       f = EToF[lf, e]  # Get global face number
       if EToS[lf, e] == 1  # check if face is on minus side
         if EToO[lf, e]     # check if on minus side, A&D define δ as minus side minus plus side
-          return δ[FToδstarts[f]:(FToδstarts[f+1]-1), :]
+          return -δ[FToδstarts[f]:(FToδstarts[f+1]-1), :]
         else
           error("shouldn't get here")  # this is because "correct" orientation is always true of a face on the minus side. 
         end
-      else                  # face on plus side, add minus sign
+      else                  # face on plus side, 
         if EToO[lf, e]      # check if orientation is correct
-          return  -δ[FToδstarts[f]:(FToδstarts[f+1]-1), :]
+          return  δ[FToδstarts[f]:(FToδstarts[f+1]-1), :]
         else                # if orientation is reversed, reverse the data
-          return  -δ[(FToδstarts[f+1]-1):-1:FToδstarts[f], :]
+          return  δ[(FToδstarts[f+1]-1):-1:FToδstarts[f], :]
         end
       end
     end
@@ -432,42 +460,18 @@ function planestrain_solve(Nr, Ns, SBPp, verts, EToV, FToB, EToF, FToE, FToLF, E
     uexact = zeros(VNp, 2)
     Jf = zeros(VNp, 2)
 
-    
-    # # modify b to incorporate BC.
+
+  
     for e = 1:nelems
         LFToB = FToB[EToF[:,e]]
 
-        neighborZ = [similar(lop[e].IsJZ[1]), similar(lop[e].IsJZ[2]), similar(lop[e].IsJZ[3]), similar(lop[e].IsJZ[4])]
-            
-        # loop over the faces to get the neighboring penalty parameters:
-        for lf = 1:4   
-            if LFToB[lf] == BC_JUMP_INTERFACE || LFToB[lf] == RS_FAULT || LFToB[lf] == VP_FAULT
-                f = EToF[lf, e]  # get global face number
-                (em, ep) = FToE[:, f]  # find the two elements that share global face f.
-                (fm, fp) = FToLF[:, f]
-
-                if em == e
-                    eo = ep 
-                    nf = fp
-                else
-                    eo = em 
-                    nf = fm
-                end
-
-                neighborZ[nf] .= lop[eo].IsJZ[nf] # need to store the Z from the other element's local face
-                
-            else  
-            end
-        
-        end
-    
-   
-    
-    loc_bdry_vec!((@view b[vstarts[e]:vstarts[e+1]-1, :]), lop[e], neighborZ, FToB[EToF[:,e]], EToF, FToE, FToLF, bc_Dirichlet, bc_Neumann, in_jump, in_tractionjump, (e, δ, θ))
-    uexact[vstarts[e]:vstarts[e+1]-1, :] = exact(lop[e].coord[1], lop[e].coord[2], e, EToDomain)
-    locsourcearray!((@view Jf[vstarts[e]:vstarts[e+1]-1, :]), source, lop[e].coord, lop[e].J, (e, EToDomain))
+      
+        loc_bdry_vec!((@view b[vstarts[e]:vstarts[e+1]-1, :]), lop[e], FToB[EToF[:,e]], EToF, FToE, FToLF, bc_Dirichlet, bc_Neumann, in_jump, in_tractionjump, (e, δ, θ))
+        uexact[vstarts[e]:vstarts[e+1]-1, :] = exact(lop[e].coord[1], lop[e].coord[2], e, EToDomain)
+        locsourcearray!((@view Jf[vstarts[e]:vstarts[e+1]-1, :]), source, lop[e].coord, lop[e].J, (e, EToDomain))
 
     end
+    
     
     # solve linear system with a backsolve to obtain displacement.
  
@@ -475,7 +479,7 @@ function planestrain_solve(Nr, Ns, SBPp, verts, EToV, FToB, EToF, FToE, FToLF, E
     
     
 
-    return (u, uexact[:], lop, vstarts, Mo)
+    return (u, uexact[:], lop, vstarts, Mo, FToδstarts)
 
 end
 
@@ -488,48 +492,189 @@ let
     #REbc_map = [BC_DIRICHLET, BC_DIRICHLET, BC_NEUMANN, BC_NEUMANN, BC_NEUMANN, BC_NEUMANN, BC_JUMP_INTERFACE, BC_JUMP_INTERFACE]
     # read in mesh from an .inp file and put in boundary condition type
     
-   #(verts, EToV, EToF, FToB, EToDomain) = read_inp_2d("meshes/BP1_v1.inp")
+ # (verts, EToV, EToF, FToB, EToDomain) = read_inp_2d("meshes/BP9_2D__30degree_v1.inp")
+
+ # 4 blocks, 90 degresss
+ verts = [-50 0 -50 0 -50 0 50 50 50;
+            -25 -25 0 0 -50 -50 -25 0 -50]
+EToV = [1 5 2 6;
+        2 6 7 9;
+        3 1 4 2;
+        4 2 8 7];
+EToV[:,1], EToV[:, 2] = EToV[:,2], EToV[:, 1]
+EToV[:,3], EToV[:, 4] = EToV[:,4], EToV[:, 3]
+
+EToF = [1 5 2 6;
+        2 6 8 12;
+        3 7 9 11;
+        4 3 10 9];
+
+ EToF[:,1], EToF[:, 2] = EToF[:,2], EToF[:, 1]
+  EToF[:,3], EToF[:, 4] = EToF[:,4], EToF[:, 3]
+
+# FToB = [1; 7; 0; 2; 1; 7; 2; 1; 0; 2; 2; 1]
+FToB = [1; 7; 0; 2; 1; 7; 2; 1; 0; 2; 2; 1]
+
+EToDomain = [1 1 2 2]
+# #   # 18 blocks 
+#     bb = 50
+#   xd = (bb/3) * cosd(60)
+#   yd = (bb/3) * sind(60)
+#   a = bb/3
+
+
+#   # skewed:
+#   verts = [-50 -15 -5 0 10 18 50 -50+xd -18 -7 6 12 30 50+xd -50+2*xd -10 -5 10 27 32 50+2*xd -25 -xd xd 25 -25+4*50/3 -25+5*50/3 75;
+#            0 0 0 0 0 0 0 -yd -16 -15 -12*sind(60) -8 -10 -yd -2*yd -30 -25 -20*sind(60) -22 -25 -2*yd -3*yd -3*yd -3*yd -3*yd -3*yd -3*yd -3*yd] 
+#  # not skewed:
+
+# #   verts = [-bb -bb+a -bb+2*a 0 a 2a bb -bb+xd -bb+a+xd -bb+2a+xd -bb+3a+xd -bb+4a+xd -bb+5a+xd bb+xd -bb+2xd -bb+a+2xd -bb+2a+2xd -bb+3a+2xd -bb+4a+2xd -bb+5a+2xd bb+2xd -bb+3xd -bb+a+3xd -bb+2a+3xd -bb+3a+3xd -bb+4a+3xd -bb+5a+3xd bb+3xd;
+# #             0 0 0 0 0 0 0 -yd -yd -yd -yd -yd -yd -yd -2*yd -2*yd -2*yd -2*yd -2*yd -2*yd -2*yd -3*yd -3*yd -3*yd -3*yd -3*yd -3*yd -3*yd] 
+  
+
+#   EToV = [8  9 10 11 12 13 15 16 17 18 19 20 22 23 24 25 26 27;
+#           9 10 11 12 13 14 16 17 18 19 20 21 23 24 25 26 27 28;
+#           1  2  3  4  5  6  8  9 10 11 12 13 15 16 17 18 19 20;
+#           2  3  4  5  6  7  9 10 11 12 13 14 16 17 18 19 20 21]
+
+#  EToF = [13 25 26 27 28 29 14 36 37 38 39 40 15 41 42 43 44 45;
+#          25 26 27 28 29 16 36 37 38 39 40 17 41 42 43 44 45 18;
+#          19 20 21 22 23 24 30 31 32 33 34 35  7  8  9 10 11 12;
+#           1  2  3  4  5  6 19 20 21 22 23 24 30 31 32 33 34 35]
+
+# FToB = [2; 2; 2; 2; 2; 2; 2; 2; 2; 2; 2; 2; 1; 1; 1; 1; 1; 1; 0; 0; 0; 0; 0; 0; 0; 0; 7; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 7; 0; 0; 0; 0; 7; 0; 0]
+
+# EToDomain = [1 1 1 2 2 2 1 1 1 2 2 2 1 1 1 2 2 2]
+
+
+#  verts = [-40 -28 -10   0   8  28  40 -40 -30 -14   0   8  25  40 -40 -32 -13   0  8  22  40 -40 -30 -12 0 5 25 40;
+#           -80 -80 -80 -80 -80 -80 -80 -40 -50 -20 -40 -35 -50 -60 -10 -12 -5 -30 -8 -20 -30   0   0   0 0 0   0  0]
+
+# #           # weird 
+# EToV = [1 2 8 9;
+#         2 3 9 10;
+#         4 11 3 10;
+#         11 4 12 5;
+#         5 6 12 13;
+#         6 7 13 14;
+#         8 9 15 16;
+#         9 10 16 17;
+#         11 18 10 17
+#         18 11 19 12;
+#         12 13 19 20;
+#         13 14 20 21;
+#         15 16 22 23;
+#         16 17 23 24;
+#         18 25 17 24;
+#         25 18 26 19;
+#         19 20 26 27;
+#         20 21 27 28]'
+
+# EToF = [15 16 40 34;
+#         16 17 41 35;
+#         42 36 18 17;
+#         37 43 18 19;
+#         19 20 44 38;
+#         20 21 45 39;
+#         8 9 34 28;
+#         9 10 35 29;
+#         36 30 11 10;
+#         31 37 11 12;
+#         12 13 38 32;
+#         13 14 39 33;
+#         1 2 28 22;
+#         2 3 29 23;
+#         30 24 4 3;
+#         25 31 4 5;
+#         5 6 32 26;
+#         6 7 33 27]'
+# # same
+# EToV = [1 2 8 9;
+#         2 3 9 10;
+#         3 4 10 11;
+#         4 5 11 12;
+#         5 6 12 13;
+#         6 7 13 14;
+#         8 9 15 16;
+#         9 10 16 17;
+#         10 11 17 18;
+#         11 12 18 19;
+#         12 13 19 20;
+#         13 14 20 21;
+#         15 16 22 23;
+#         16 17 23 24;
+#         17 18 24 25;
+#         18 19 25 26;
+#         19 20 26 27;
+#         20 21 27 28]'
+
+# EToF = [15 16 40 34;
+#         16 17 41 35;
+#         17 18 42 36;
+#         18 19 43 37;
+#         19 20 44 38;
+#         20 21 45 39;
+#         8 9 34 28;
+#         9 10 35 29;
+#         10 11 36 30;
+#         11 12 37 31;
+#         12 13 38 32;
+#         13 14 39 33;
+#         1 2 28 22;
+#         2 3 29 23;
+#         3 4 30 24;
+#         4 5 31 25;
+#         5 6 32 26;
+#         6 7 33 27]'
+
+#FToB = [1 0 0 7 0 0 1 1 0 0 7 0 0 1 1 0 0 8 0 0 1 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0 0 0 0 2 2 2 2 2 2]'
+
+#EToDomain = [1 1 1 2 2 2 1 1 1 2 2 2 1 1 1 2 2 2]
+
 
    #uncomment for one block
-    # verts = [-10.5 9.9 -10.1 10.5;
-    #         -10.2 -9.8 9.95 10];
+    # verts = [-12.5 5.9 -8.1 7.5;
+    #         -13.2 -5.8 14 19];
     # #verts = 1 .* [-1 1.5 -1.5 1;
     #  #   -1 -2 0.5 1];
-    # FToB = [1; 1; 1; 1];
+    # FToB = [2; 2; 1; 1];
     # #  same orientation
-    # EToV = [1;2;3;4];
-    # EToF = [1; 
-    #         2;
+    # EToV = [3;1;4;2];
+    # EToF = [4; 
     #         3;
-    #         4];
+    #         1;
+    #         2];
     # EToDomain = [1]
 
    #uncomment for two blocks with same orientation
-#  verts = [-120 1 100 -111 1.4 100;
-#              1 -1 2 100 102 97];
+ #verts = [-100 1 100 -111 1.4 100;
+ #          1 -1 2 100 102 97];
 
-#    #          verts = [-10 0 10 -10 0 10;
-#    #      0 0 0 10 10 10];
+ #verts = [-11 0 10 -10 0 10;
+   #    0 0 0 10 10 10];
 
-#    FToB = [1; 7; 1; 2; 2; 2; 2];
-#    #FToB = [1; 1; 1; 1; 1; 1; 1];
+# verts = [-10 0 10 -10 0 10;
+#       0 0 0 10 10 10];
+
+ #   FToB = [1; 7; 1; 2; 2; 2; 2];
+   #FToB = [1; 1; 1; 1; 1; 1; 1];
 
 
-#    #  same orientation
-#     EToV = [1 2; 2 3; 4 5; 5 6];
-#     EToF = [1 2; 
-#             2 5;
-#             4 3;
-#             6 7];
+   #  same orientation
+    # EToV = [1 2; 2 3; 4 5; 5 6];
+    # EToF = [1 2; 
+    #         2 3;
+    #         4 5;
+    #         6 7];
 
 #   #  different orientation
-#     # EToV = [1 6; 2 5; 4 3; 5 2];
-#     # EToF = [1 5; 
-#     #         2 2;
-#     #         4 7;
-#     #         6 3];
+#     EToV = [1 6; 2 5; 4 3; 5 2];
+#     EToF = [1 3; 
+#             2 2;
+#             4 7;
+#             6 5];
     
-#   EToDomain = [1 2]
+#    EToDomain = [1 2]
 
    #uncomment for four blocks with same orientation
 #   verts = [-40   0  -40 0  40 40 -40   0  40; 
@@ -573,31 +718,62 @@ let
  
 #     (FToE, FToLF, EToO, EToS) = connectivityarrays(EToV, EToF)
     
-    psi = 30
+#     psi = 30
    
-    xd = 20*cosd(psi)
-    yd = 20*sind(psi)
-    verts = [-20+xd  0+xd    -20  0  20+xd      20  -20+2*xd      0+2*xd     20+2*xd; 
-                -yd  -yd       0    0    -yd     0  -2*yd  -2*yd  -2*yd];
+#     xd = 20*cosd(psi)
+#     yd = 20*sind(psi)
+#     verts = [-20+xd  0+xd    -20  0  20+xd      20  -20+2*xd      0+2*xd     20+2*xd; 
+#                 -yd  -yd       0    0    -yd     0  -2*yd  -2*yd  -2*yd];
 
-    FToB = [1; 7; 1; 2; 2; 0; 0; 1; 8; 1; 2; 2];
-#    #FToB = [1; 1; 1; 1; 1; 1; 1];
-
-
-    EToV = [1 7 2 8;
-    2 8 5 9;
-    3 1 4 2;
-    4 2 6 5]
-
-    EToF = [1 8 2 9;
-    2 9 3 10;
-    6 11 7 12;
-    4 6 5 7]
+#     FToB = [1; 7; 1; 2; 2; 0; 0; 1; 8; 1; 2; 2];
+# # #    #FToB = [1; 1; 1; 1; 1; 1; 1];
 
 
-   EToDomain = [1 1 2 2]
+#     EToV = [1 7 2 8;
+#     2 8 5 9;
+#     3 1 4 2;
+#     4 2 6 5]
+
+#     EToF = [1 8 2 9;
+#     2 9 3 10;
+#     6 11 7 12;
+#     4 6 5 7]
 
 
+#     EToDomain = [1 1 2 2]
+# psi = 30
+#     Lx = 40
+#     Wf = 40
+#     xd = Wf*cosd(psi)
+#     yd = 2*Wf*sind(psi)
+#     verts = [-Lx+xd  0+xd    -Lx   0  Lx+xd      Lx  -Lx+2*xd      0+2*xd     Lx+2*xd; 
+#              -yd/2  -yd/2     0    0    -yd/2     0  -yd  -yd  -yd];
+
+#  FToB = [1; 7; 1; 2; 2; 0; 0; 1; 8; 1; 2; 2];  # boundary/interface conditions
+
+ # # same:
+    #  EToV = [1 7 2 8;
+    # 2 8 5 9;
+    # 3 1 4 2;
+    # 4 2 6 5]
+
+    # EToF = [1 8 2 9;
+    # 2 9 3 10;
+    # 6 11 7 12;
+    # 4 6 5 7]
+
+
+# #     # other diff orient
+#     EToV = [1 1 2 8;
+#     2 7 5 9;
+#     3 2 4 2;
+#     4 8 6 5]
+
+#     EToF = [1 6 2 9;
+#    2 11 3 10;
+#     6 8 7 12;
+#     4 9 5 7]
+#     EToDomain = [1 1 2 2]
 
  #EToV defines the element by its vertices
     #EToF defines element by its four faces, in global face number
@@ -635,7 +811,7 @@ let
 
 
     # create arrays for storing errors and rates of convergence
-    ϵ = zeros(6)
+    ϵ = zeros(3)
     rates = zeros(length(ϵ)-1)
 
     # successively refine 
@@ -647,7 +823,7 @@ let
         Ns = EToN0[2, :] * (2^(lvl-1))
 
         # solve for displacements u and compute exact solution uexact. lop are local ops and vstars are indices for each element.
-        (u, uexact, lop, vstarts, M) = planestrain_solve(Nr, Ns, SBPp, verts, EToV, FToB, EToF, FToE, FToLF, EToO, EToS, nfaces, EToDomain)
+        (u, uexact, lop, vstarts, M, FToδstarts) = planestrain_solve(Nr, Ns, SBPp, verts, EToV, FToB, EToF, FToE, FToLF, EToO, EToS, nfaces, EToDomain)
                   
         N = Integer(length(u)/2)
 
@@ -656,13 +832,15 @@ let
 
         u1 = u[1:N]
         u2 = u[N+1:2*N]
-        if lvl == 1 # plot approximation, exact solution, or error on coarsest grid
+
+        
+        if lvl == 3 # plot approximation, exact solution, or error on coarsest grid
             
-            better_plot_solution(u2, nelems, vstarts, Nr, Ns, lop) 
+            #better_plot_solution(u1, nelems, vstarts, Nr, Ns, lop) 
             
-            better_plot_solution(u2_exact, nelems, vstarts, Nr, Ns, lop)
-            better_plot_solution(u2_exact-u2, nelems, vstarts, Nr, Ns, lop)
-            #poo
+            #better_plot_solution(u1_exact, nelems, vstarts, Nr, Ns, lop)
+          better_plot_solution(u2_exact-u2, nelems, vstarts, Nr, Ns, lop)
+      
           
         end
 
@@ -670,15 +848,60 @@ let
         for e = 2:length(lop)
             H̃ = blockdiag(H̃, lop[e].H̃, lop[e].H̃)
         end
-        # A = -H̃ * M
-        # @show extrema(real(eigvals(Matrix(A))))
-        # @show extrema(imag(eigvals(Matrix(A))))
-        # @show extrema(A - A')
-        # spy(A)
-        # spy(A-A')
-        # poo
-        diff = u .- uexact
 
+        # f = 2
+        # (e1, e2) = FToE[:, f]
+        e1 = 1
+        lf1 = 1
+        # (lf1, lf2) = FToLF[:, f]
+        # δrng = FToδstarts[f]:(FToδstarts[f+1]-1)
+         urng1 = vstarts[e1]:(vstarts[e1+1]-1)
+         #urng2 = vstarts[e2]:(vstarts[e2+1]-1)
+
+
+         nxf1 = lop[e1].nx[lf1]
+         nyf1 = lop[e1].ny[lf1]
+         x1 = lop[e1].facecoord[1][lf1]
+         y1 = lop[e1].facecoord[2][lf1]
+
+        # nxf2 = lop[e2].nx[lf2]
+        # nyf2 = lop[e2].ny[lf2]
+        # x2 = lop[e2].facecoord[1][lf2]
+        # y2 = lop[e2].facecoord[2][lf2]
+
+        
+
+        # t1, t2 = computetraction(lop[e1], lf1, u1[urng1], u2[urng1])
+      
+        t1, t2 = computetraction(lop[e1], lf1, u1[urng1], u2[urng1])
+        # t3, t4 = computetraction(lop[e2], lf2, u1[urng2], u2[urng2])
+
+        # # @show x1
+        # # @show nxf1
+        T1e = exact_traction(x1, y1, nxf1, nyf1, e1, EToDomain)
+        t1e = T1e[:,1] 
+        t2e = T1e[:,2]
+      
+        # T1e = exact_traction(x1, y1, nxf1, nyf1, e1, EToDomain)
+        # t1e = T1e[:,1]
+        # t2e = T1e[:,2]
+        # T2e = exact_traction(x2, y2, nxf2, nyf2, e2, EToDomain)
+        # t3e = T2e[:,1]
+        # t4e = T2e[:,2]
+
+        #@show exact_traction(x1[lf1], y1[lf1], nxf1, nyf1, e1, EToDomain)
+        # @show t1, t2, t3, t4
+        # @show t1e, t2e, t3e, t4e  
+        
+        #A = -H̃ * M
+        #@show extrema(real(eigvals(Matrix(A))))
+        #@show extrema(imag(eigvals(Matrix(A))))
+        #@show extrema(A - A')
+        #spy(A)
+        #spy(A-A')
+ 
+        diff = u .- uexact
+     
         ϵ[lvl] = sqrt(diff' * H̃ * diff) ./ sqrt(uexact' * H̃ * uexact)   # relative error
         
     end
