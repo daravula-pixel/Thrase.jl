@@ -11,7 +11,6 @@ function odefun(dψV, ψδ, p, t)
   Vp = p.Vp
   A = p.A
   lop = p.lop
-  neighborZ = p.neighborZ
   EToF = p.EToF
   EToS = p.EToS
   FToE = p.FToE
@@ -51,9 +50,9 @@ function odefun(dψV, ψδ, p, t)
     # Set boundary data functions:
     function creep(x,y,t, e, EToDomain)
         if EToDomain[e] == 1 # left/top hand side of fault
-            return [(Vp/2) .* t * cosd(psi) .+ 0 .* x .+ 0 .* y, (Vp/2) .* t * sind(psi).+ 0 .* x .+ 0 .* y]
+            return [(Vp/2) .* t * cosd(psi) .+ 0 .* x .+ 0 .* y, -(Vp/2) .* t * sind(psi).+ 0 .* x .+ 0 .* y]
         elseif EToDomain[e] == 2
-            return [-(Vp/2) .* t * cosd(psi).+ 0 .* x .+ 0 .* y, -(Vp/2) .* t * sind(psi).+ 0 .* x .+ 0 .* y]
+            return [-(Vp/2) .* t * cosd(psi).+ 0 .* x .+ 0 .* y, (Vp/2) .* t * sind(psi).+ 0 .* x .+ 0 .* y]
         else
             error("shouldn't get here")
         end
@@ -70,15 +69,15 @@ function odefun(dψV, ψδ, p, t)
       f = EToF[lf, e]  # Get global face number
       if EToS[lf, e] == 1  # check if face is on minus side
         if EToO[lf, e]     # check if on minus side, A&D define δ as minus side minus plus side
-          return δ[FToδstarts[f]:(FToδstarts[f+1]-1), :]
+          return -δ[FToδstarts[f]:(FToδstarts[f+1]-1), :]
         else
           error("shouldn't get here")  # this is because "correct" orientation is always true of a face on the minus side. 
         end
       else                  # face on plus side, add minus sign
         if EToO[lf, e]      # check if orientation is correct
-          return  -δ[FToδstarts[f]:(FToδstarts[f+1]-1), :]
+          return  δ[FToδstarts[f]:(FToδstarts[f+1]-1), :]
         else                # if orientation is reversed, reverse the data
-          return  -δ[(FToδstarts[f+1]-1):-1:FToδstarts[f], :]
+          return  δ[(FToδstarts[f+1]-1):-1:FToδstarts[f], :]
         end
       end
     end
@@ -102,8 +101,9 @@ function odefun(dψV, ψδ, p, t)
   b .= 0
   # fill in boundary data into b
   for e = 1:nelems
-        loc_bdry_vec_v2!((@view b[vstarts[e]:vstarts[e+1]-1, :]), lop[e], neighborZ[e], FToB[EToF[:,e]], EToF, FToE, FToLF, bc_Dirichlet, bc_Neumann, in_jump, (e, δ, t, EToDomain))
+        loc_bdry_vec_v2!((@view b[vstarts[e]:vstarts[e+1]-1, :]), lop[e], FToB[EToF[:,e]], EToF, FToE, FToLF, bc_Dirichlet, bc_Neumann, in_jump, (e, δ, t, EToDomain))
   end
+
 
   # solve for displacements everywhere in domain
   U = A \ b[:]
@@ -146,19 +146,27 @@ function odefun(dψV, ψδ, p, t)
       sJ2 = lop[e2].sJ[lf2]
 
     
-
-      t1, t2 = computetraction(lop[e1], lf1, u[urng1], w[urng1])
-      t3, t4 = computetraction(lop[e2], lf2, u[urng2], w[urng2]) 
- 
-        Δτ1 = (-nyf1) .* t1 .+ nxf1 .* t2   
-        Δτ2 = (-nyf2) .* t3 .+ nxf2 .* t4
-        Δσ1 = nxf1 .* t1 .+ nyf1 .* t2   
-        Δσ2 = nxf2 .* t3 .+ nyf2 .* t4
+    # compute tractions wrt to volume orientation; by default these include corrections
+    (t1, t2, t3, t4)  = computetraction(lop, e1, e2, lf1, lf2, u, w, urng1, urng2, EToF, EToO, FToδstarts, δ)
       
+        # resolve tractions into shear and normal, these are still wrt volume orientation, not face:
 
-        @views Δτ[δrng] .= (Δτ1 .+ Δτ2) ./ 2 
+         Δτ1 = (-nyf1) .* t1 .+ nxf1 .* t2   
+         Δτ2 = (-nyf2) .* t3 .+ nxf2 .* t4
+         Δσ1 = nxf1 .* t1 .+ nyf1 .* t2   
+         Δσ2 = nxf2 .* t3 .+ nyf2 .* t4
+      
+ 
+     # compute traction on fault as average of both sides, map to fault orientation:
+      if EToO[lf2, e2]
+        @views Δτ[δrng] .= (Δτ1 .+ Δτ2) ./ 2
         @views Δσ[δrng] .= (Δσ1 .+ Δσ2) ./ 2 
-    
+      else
+        @views Δτ[δrng] .= (Δτ1 .+ Δτ2[end:-1:1]) ./ 2 
+        @views Δσ[δrng] .= (Δσ1 .+ Δσ2[end:-1:1]) ./ 2 
+      end
+
+  
       for n = 1:length(δrng)
         δn = δrng[n]
         τ[δn] = Δτ[δn] + τ0[δn]
@@ -206,8 +214,12 @@ function odefun(dψV, ψδ, p, t)
       
       
     elseif FToB[f] == VP_FAULT
+
+      
       (e1, e2) = FToE[:, f]
       (lf1, lf2) = FToLF[:, f]
+
+    
 
       nxf1 = lop[e1].nx[lf1]
       nyf1 = lop[e1].ny[lf1]
@@ -223,30 +235,36 @@ function odefun(dψV, ψδ, p, t)
       urng2 = vstarts[e2]:(vstarts[e2+1]-1)
 
 
-      t1, t2 = computetraction(lop[e1], lf1, u[urng1], w[urng1])
-      t3, t4 = computetraction(lop[e2], lf2, u[urng2], w[urng2])
+      (t1, t2, t3, t4)  = computetraction(lop, e1, e2, lf1, lf2, u, w, urng1, urng2, EToF, EToO, FToδstarts, δ)
+
+
     
- 
         Δτ1 = (-nyf1) .* t1 .+ nxf1 .* t2   
         Δτ2 = (-nyf2) .* t3 .+ nxf2 .* t4
         Δσ1 = nxf1 .* t1 .+ nyf1 .* t2   
         Δσ2 = nxf2 .* t3 .+ nyf2 .* t4
       
-       @views Δτ[δrng] .= (Δτ1 .+ Δτ2) ./ 2 
-       @views Δσ[δrng] .= (Δσ1 .+ Δσ2) ./ 2 
+
+       if EToO[lf2, e2]
+        @views Δτ[δrng] .= (Δτ1 .+ Δτ2) ./ 2
+        @views Δσ[δrng] .= (Δσ1 .+ Δσ2) ./ 2 
+      else
+        @views Δτ[δrng] .= (Δτ1 .+ Δτ2[end:-1:1]) ./ 2 
+        @views Δσ[δrng] .= (Δσ1 .+ Δσ2[end:-1:1]) ./ 2 
+      end
  
       for δn = FToδstarts[f]:(FToδstarts[f+1]-1)
-  
+        
         τ[δn] = Δτ[δn] + τ0[δn]
         σ[δn] = Δσ[δn] + σ0[δn]
-        V1[δn] = Vp  
+        V1[δn] = Vp
 
       end
    
     end
     
     
-         
+      
 
     
   end

@@ -32,7 +32,7 @@ function main()
     ### input parameters
     (pth, meshfile, Nx, Ny, sim_years, Vp, psi, ρ, ν, cs, σn, 
     RSamin, RSamax, RSb, RSDc,
-    RSf0, RSV0, RSVinit, RSH1,RSH2, RSWf, SBPp) = read_params_planestrain(localARGS[1])
+    RSf0, RSV0, RSVinit, RSH1,RSH2, RSw, RSWf, SBPp) = read_params_planestrain(localARGS[1])
 
     
     try
@@ -57,140 +57,7 @@ function main()
     end
 
    # Read in the unstructured mesh input file:
-   #(verts, EToV, EToF, FToB, EToDomain) = read_inp_2d("meshes/"*meshfile)
-
-   # 16 blocks total 
-   Lx = 40
-   Ly = 40
-    x= [-Lx -.75*Lx -.5*Lx -.25*Lx 0 .25*Lx .5*Lx .75*Lx Lx]
-    y = [-Ly -.75*Ly -.5*Ly -.25*Ly 0]
-    
-    old_verts = [x x x x x
-            y[1]*ones(1,9) y[2]*ones(1,9) y[3]*ones(1,9) y[4]*ones(1,9) y[5]*ones(1,9)]
-    
-    verts = old_verts .+ 5 .* rand(2, 45)
-    verts[:, 5] = old_verts[:, 5]
-    verts[:, 14] = old_verts[:, 14]
-    verts[:, 23] = old_verts[:, 23]
-    verts[:, 32] = old_verts[:, 32]
-    verts[:, 41] = old_verts[:, 41]
-    # note the tranpose here:
-    EToV = [1 2 10 11 
-        2 3 11 12
-        3 4 12 13
-        4 5 13 14
-        5 6 14 15
-        6 7 15 16
-        7 8 16 17
-        8 9 17 18
-        10 11 19 20
-        11 12 20 21
-        12 13 21 22 
-        13 14 22 23
-        14 15 23 24
-        15 16 24 25
-        16 17 25 26
-        17 18 26 27
-        19 20 28 29
-        20 21 29 30
-        21 22 30 31
-        22 23 31 32
-        23 24 32 33
-        24 25 33 34
-        25 26 34 35
-        26 27 35 36
-        28 29 37 38
-        29 30 38 39
-        30 31 39 40
-        31 32 40 41
-        32 33 41 42
-        33 34 42 43
-        34 35 43 44
-        35 36 44 45]'
-    
-    # note transpose:
-        EToF = [9 10 1 69
-        10 11 2 70
-        11 12 3 71
-        12 13 4 72
-        13 14 5 73
-        14 15 6 74
-        15 16 7 75
-        16 17 8 76
-        18 19 69 27
-        19 20 70 28
-        20 21 71 29
-        21 22 72 30
-        22 23 73 31
-        23 24 74 32
-        24 25 75 33
-        25 26 76 34
-        35 36 27 44
-        36 37 28 45
-        37 38 29 46
-        38 39 30 47
-        39 40 31 48
-        40 41 32 49
-        41 42 33 50
-        42 43 34 51
-        52 53 44 61
-        53 54 45 62
-        54 55 46 63
-        55 56 47 64
-        56 57 48 65
-        57 58 49 66
-        58 59 50 67
-        59 60 51 68]'
-
-        # first row ends on face 26, second row ends at 60
-    FToB = [2 2 2 2 2 2 2 2 1 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 2 2 2 2 2 2 2 2 0 0 0 0 0 0 0 0]'
-    FToB[13] = 8
-    FToB[22] = 8
-    FToB[39] = 7
-    FToB[56] = 7
-    EToDomain = [1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2]
-    #    verts =  4 .* [-20 -20 20 20 0 0;
-    #             0 -20 -20 0 0 -20]
-
-    # EToV = [2 6;
-    #         6 3;
-    #         1 5;
-    #         5 4]            
-    
-    # EToF = 
-    # [4 3;
-    #  3 7;
-    #  1 6;
-    #  2 5]
-
-    #  FToB = [2, 2, 7, 1, 2, 2, 1]
-
-    #  EToDomain = [1, 2]
-
-    #verts = [-20   0  -20 0  20 20 -20   0  20; 
-          #   -20 -20    0 0 -20  0 -40 -40 -40];
-
-#     xd = 20*cosd(psi)
-#     yd = 20*sind(psi)
-#     verts = [-20+xd  0+xd    -20  0  20+xd      20  -20+2*xd      0+2*xd     20+2*xd; 
-#                 -yd  -yd       0    0    -yd     0  -2*yd  -2*yd  -2*yd];
-
-#     FToB = [1; 7; 1; 2; 2; 0; 0; 1; 8; 1; 2; 2];
-# #    #FToB = [1; 1; 1; 1; 1; 1; 1];
-
-
-#     EToV = [1 7 2 8;
-#     2 8 5 9;
-#     3 1 4 2;
-#     4 2 6 5]
-
-#     EToF = [1 8 2 9;
-#     2 9 3 10;
-#     6 11 7 12;
-#     4 6 5 7]
-
-
-#    EToDomain = [1 1 2 2]
+  (verts, EToV, EToF, FToB, EToDomain) = read_inp_2d("meshes/"*meshfile)
 
     # number of elements and faces
     (nelems, nfaces) = (size(EToV, 2), size(FToB, 1))
@@ -221,6 +88,7 @@ function main()
     # Secondary Grid Arrays:
     (FToE, FToLF, EToO, EToS) = connectivityarrays(EToV, EToF)
 
+
     ######### create local operators on each block/element by applying coordinate transform
     # Create an empty dictionary to store the operators;
     # index via element number (an integer), return structure containing local ops.
@@ -230,7 +98,7 @@ function main()
     lop = Dict{Int64, OPTYPE}()
 
     # create an empty dictionary to store each element's neighbor's penalty params:
-    NTYPE = typeof([l[12][1], l[12][2], l[12][3], l[12][4]])
+    NTYPE = typeof([l[11][1], l[11][2], l[11][3], l[11][4]])
     neighborZ = Dict{Int64, NTYPE}()
 
     # Initialize array of indices corresponding to vertices as you move through blocks/elements
@@ -285,7 +153,11 @@ function main()
         lop[e] = locoperator(SBPp, Nr[e], Ns[e], exact_mu, exact_lambda, metrics, FToB[EToF[:, e]]) 
     end
 
-
+    # Calculate neighboring penalty parameters and add to lop 
+    for e = 1:nelems
+        lop[e].neighborZ  .= calculate_neighbors(lop, e, FToB, EToF, FToE, FToLF, EToO)
+    end
+    
     # Assemble the global volume operator and compute LU factorization:
     A = global_operator(lop, vstarts, FToB, FToE, FToLF, EToO, EToS, Nr, Ns)
     A = lu(A)
@@ -293,37 +165,6 @@ function main()
     # Get unique array indices for the faces corresponding to the fault/jump interface
     FToδstarts = bcstarts(FToB, FToE, FToLF, (RS_FAULT, VP_FAULT), Nr, Ns)
 
-
-    # Calculate interface jump displacement penalty parameters:
-    for e = 1:nelems
-        LFToB = FToB[EToF[:,e]]
-
-        nz = [similar(lop[e].IsJZ[1]), similar(lop[e].IsJZ[2]), similar(lop[e].IsJZ[3]), similar(lop[e].IsJZ[4])]
-            
-        # loop over the faces to get the neighboring penalty parameters:
-        for lf = 1:4   
-            if LFToB[lf] == BC_LOCKED_INTERFACE || LFToB[lf] == BC_JUMP_INTERFACE || LFToB[lf] == RS_FAULT || LFToB[lf] == VP_FAULT
-                f = EToF[lf, e]  # get global face number
-                (em, ep) = FToE[:, f]  # find the two elements that share global face f.
-                (fm, fp) = FToLF[:, f]
-
-                if em == e
-                    eo = ep 
-                    nf = fp
-                else
-                    eo = em 
-                    nf = fm
-                end
-                
-                nz[nf] .= lop[eo].IsJZ[nf] # need to store the Z from the other element's local face
-                
-            else  
-            end
-        
-        end
-        
-        neighborZ[e] = nz
-    end
     ############ END COORDINATE TRANSFORM
 
     # Compute the total number of volume and jump (δ) points
@@ -334,15 +175,14 @@ function main()
     #{{{ Compute the boundary/interface functions:
     function creep(x,y,t, e, EToDomain)
         if EToDomain[e] == 1 # left hand side of fault
-            return [(Vp/2) .* t * cosd(psi) .+ 0 .* x .+ 0 .* y, (Vp/2) .* t * sind(psi) .+ 0 .* x .+ 0 .* y]
+            return [(Vp/2) .* t * cosd(psi) .+ 0 .* x .+ 0 .* y, -(Vp/2) .* t * sind(psi) .+ 0 .* x .+ 0 .* y]
         elseif EToDomain[e] == 2
-            return [-(Vp/2) .* t * cosd(psi) .+ 0 .* x .+ 0 .* y, -(Vp/2) .* t * sind(psi) .+ 0 .* x .+ 0 .* y]
+            return [-(Vp/2) .* t * cosd(psi) .+ 0 .* x .+ 0 .* y, (Vp/2) .* t * sind(psi) .+ 0 .* x .+ 0 .* y]
         else
             error("shouldn't get here")
         end
             
     end
-
     
     bc_Dirichlet = (lf, x, y, e, δ, t, EToDomain) -> creep(x,y,t,e,EToDomain)
     bc_Neumann   = (lf, x, y, nx, ny, e, δ, t, EToDomain) -> [zeros(size(x)), zeros(size(x))]
@@ -352,16 +192,16 @@ function main()
     in_jump      = (lf, x, y, e, δ, t, EToDomain) -> begin
       f = EToF[lf, e]  # Get global face number
       if EToS[lf, e] == 1  # check if face is on minus side
-        if EToO[lf, e]     # check if on minus side, A&D define δ as minus side minus plus side
-          return δ[FToδstarts[f]:(FToδstarts[f+1]-1), :]
+        if EToO[lf, e]     # check if on minus side, A&D define δ as minus side minus plus side, i do opposite.
+          return -δ[FToδstarts[f]:(FToδstarts[f+1]-1), :]
         else
           error("shouldn't get here")  # this is because "correct" orientation is always true of a face on the minus side. 
         end
       else                  # face on plus side, add minus sign
         if EToO[lf, e]      # check if orientation is correct
-          return  -δ[FToδstarts[f]:(FToδstarts[f+1]-1), :]
+          return  δ[FToδstarts[f]:(FToδstarts[f+1]-1), :]
         else                # if orientation is reversed, reverse the data
-          return  -δ[(FToδstarts[f+1]-1):-1:FToδstarts[f], :]
+          return  δ[(FToδstarts[f+1]-1):-1:FToδstarts[f], :]
         end
       end
     end
@@ -374,10 +214,12 @@ function main()
     # initial slip vector
     δ = zeros(δNp, 2) # fault parallel (slip) followed by fault normal (opening)
   
-    # fill in initial boundary data into b
+  
+      # fill in initial boundary data into b
     for e = 1:nelems
-        loc_bdry_vec_v2!((@view b[vstarts[e]:vstarts[e+1]-1, :]), lop[e], neighborZ[e], FToB[EToF[:,e]], EToF, FToE, FToLF, bc_Dirichlet, bc_Neumann, in_jump, (e, δ, t, EToDomain))
+        loc_bdry_vec_v2!((@view b[vstarts[e]:vstarts[e+1]-1, :]), lop[e], FToB[EToF[:,e]], EToF, FToE, FToLF, bc_Dirichlet, bc_Neumann, in_jump, (e, δ, t, EToDomain))
     end
+   
    
     U = A \ b[:] # solve linear system with a backsolve to obtain initial displacements u, w
     u = U[1:VNp]
@@ -415,17 +257,6 @@ function main()
             δNp)
     σ0 = σn .* ones(δNp)
 
-    # for f = 1:nfaces
-    #     if FToB[f] == RS_FAULT
-    #         (e1, e2) = FToE[:, f]
-    #         (lf1, lf2) = FToLF[:, f]
-    #         nx = lop[e1].nx
-    #         δrng = FToδstarts[f]:(FToδstarts[f+1]-1)
-    #         for n = 1:length(δrng)
-    #             τ0[δrng[n]] = sign(nx[lf1][n])*abs(τ0[δrng[n]]) # TODO WTF is this for.
-    #         end
-    #     end
-    # end
    
     # Set initial state variable according to benchmark           
     θ = (RSDc ./ RSV0) .* exp.((RSa ./ RSb) .* log.((2 .* RSV0 ./ RSVinit) .*
@@ -465,8 +296,7 @@ function main()
                                 (RS_FAULT, VP_FAULT))
 
     fault = setupfaultcoord(lop, FToB, FToE, FToLF,
-                                (RS_FAULT, VP_FAULT)) 
-
+                                (RS_FAULT, VP_FAULT), psi) 
 
 
 
@@ -531,7 +361,7 @@ function main()
  
     # Solve DAE using Tsit5(), an adaptive Runge-Kutta method
     sol = solve(prob, Tsit5(); isoutofdomain=stepcheck, dt=1,
-                abstol = 1e-6, reltol = 1e-6, save_everystep=false, #gamma = 0.05,
+                abstol = 1e-7, reltol = 1e-7, save_everystep=false, #gamma = 0.05,
                 internalnorm=(x, _)->norm(x, Inf), callback=cb)
                 
                 
@@ -542,11 +372,9 @@ end
 S = main();
 
 # example of how to plot slip contours (uncomment if desired):
-# plot_slip(pth*"slip.dat")
+# pth = "output/bp3-unstructured/2026-07-29T10:51:01.351/Slip_BP3_N_20_.dat"
+# plot_slip(pth)
 
 # examples of how ot plot times series of shear stress:
-#pth = "BP3_N_40_0.0_-7.5.dat"
-#plot_fault_time_series("shear_stress", pth)
-# plot_fault_time_series("slip_rate", pth*"fltst_strk000.txt")
-# plot_fault_time_series("shear_stress", pth*"fltst_strk+10.txt")
-# plot_fault_time_series("state", pth*"fltst_strk+25.txt")
+# pth = "output/bp3-unstructured/2026-07-29T10:51:01.351/BP3_N_20_0.0_0.0.dat"
+# plot_fault_time_series("slip_rate", pth)

@@ -1,0 +1,46 @@
+# Input parameter file. 
+# Solves the SEAS benchmark problem BP9 (30 degree thrust):
+# https://strike.scec.org/cvws/seas/download/SEAS_BP9.pdf
+#
+# path to store output
+pth =./output/bp9-unstructured/
+# name of mesh file (make sure this matches psi below):
+meshfile=BP9_2D_30d.inp
+# details of output data:
+# number of grid points in each dimension ON EACH ELEMENT/BLOCK
+# make sure to resolve h* and l_b; should be written as integer.
+Nx = 20
+Nz = 20
+#
+# how many years to simulate
+sim_years = 8000
+#
+# loading rate
+Vp = 1e-9
+#
+# fault slip rate 
+# VL = 1e-9
+# dip angle - make sure this matches meshfile:
+psi = 30
+# elastcity parameters
+ρ = 2.670
+ν = 0.25
+cs = 3.464
+# σn will function as the minimum effective stress parameter
+σn = 100
+#
+# rate-and-state friction parameters
+RSamin = 0.004
+RSamax = 0.04
+RSb = 0.03
+RSDc = 0.56
+RSf0 = 0.6
+RSV0 = 1e-6
+RSVinit = 1e-9
+RSH = 16
+RSHt = 2
+RSw = 12
+RSWf = 40
+#
+# SBP interior spatial order of accuracy
+SBPp   = 2
