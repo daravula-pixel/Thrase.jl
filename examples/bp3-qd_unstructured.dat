@@ -5,7 +5,7 @@
 # path to store output
 pth =./output/bp3-unstructured/
 # name of mesh file:
-meshfile=BP9_2D_90d_v5.inp
+meshfile= ./meshes/fault_dip.inp
 # details of output data:
 # number of grid points in each dimension ON EACH ELEMENT/BLOCK
 # make sure to resolve h* and l_b; should be written as integer.

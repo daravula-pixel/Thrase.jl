@@ -5,7 +5,7 @@
 # path to store output
 pth =./output/bp1-qd-unstructured/
 # name of mesh file:
-meshfile=BP1_v1.inp
+meshfile =fault_dip.inp
 # details of output data:
 # number of grid points in each dimension ON EACH ELEMENT/BLOCK
 # make sure to resolve h* and l_b; should be written as integer.
@@ -13,7 +13,7 @@ Nx = 80
 Nz = 80
 #
 # how many years to simulate
-sim_years = 3000
+sim_years = 300
 #
 # loading rate
 Vp = 1e-9

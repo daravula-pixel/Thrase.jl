@@ -1,6 +1,6 @@
 *Heading
  /Users/darshika/Thrase_fork/Thrase.jl/fault_dip
-*NODE
+*NODE, NSET=ALLNODES
 1, 0, 0, 0
 2, 69.282032302755, 0, 0
 3, 69.282032302755, -40, 0
