@@ -61,6 +61,55 @@ function main()
 
    # Read in the unstructured mesh input file:
     (verts, EToV, EToF, FToB, EToDomain) = read_inp_2d("meshes/"*meshfile)
+    
+    #debugging code
+    println("\n================ MESH DEBUG ================")
+    println("File: ", meshfile)
+
+    println("\n--- verts ---")
+    println("size(verts) = ", size(verts))
+    println("number of nodes = ", size(verts, 2))
+    println("first 10 nodes:")
+    display(verts[:, 1:min(10, size(verts,2))])
+
+    println("\n--- EToV ---")
+    println("size(EToV) = ", size(EToV))
+    println("number of elements = ", size(EToV, 2))
+    println("first 10 elements:")
+    display(EToV[:, 1:min(10, size(EToV,2))])
+
+    println("\n--- EToF ---")
+    println("size(EToF) = ", size(EToF))
+    println("number of faces = ", maximum(EToF))
+    println("first 10 elements:")
+    display(EToF[:, 1:min(10, size(EToF,2))])
+
+    println("\n--- FToB ---")
+    println("length(FToB) = ", length(FToB))
+    println("BC counts:")
+    println("  DIRICHLET        = ", count(FToB .== BC_DIRICHLET))
+    println("  NEUMANN          = ", count(FToB .== BC_NEUMANN))
+    println("  FAULT (7)        = ", count(FToB .== 7))
+    println("  LOCKED_INTERFACE = ", count(FToB .== BC_LOCKED_INTERFACE))
+
+    println("\n--- EToDomain ---")
+    println("length(EToDomain) = ", length(EToDomain))
+    println("domain 1 = ", count(EToDomain .== 1))
+    println("domain 2 = ", count(EToDomain .== 2))
+    println("zero     = ", count(EToDomain .== 0))
+
+    println("============================================\n")
+
+    println("\nUnique FToB values and counts:")
+
+    for bc in sort(unique(FToB))
+        println(
+            "  FToB = ", bc,
+            " : ", count(FToB .== bc),
+            " faces"
+    )
+    end
+    #end of debugging code
 
     # number of elements and faces
     (nelems, nfaces) = (size(EToV, 2), size(FToB, 1))
@@ -269,6 +318,19 @@ function main()
     # Set pre-stress according to benchmark description, using max normal stress
      σ0 = min.(100, sind(psi)*sind(psi) .* σ11_0 .+ cosd(psi)*cosd(psi) .* σ33_0)
      τ0 = sind(psi)*cosd(psi) .* (σ11_0 .- σ33_0)
+
+     println("\n========== INITIAL STRESS ==========")
+     println("minimum tau0   = ", minimum(τ0))
+     println("maximum tau0   = ", maximum(τ0))
+     println("minimum sigma0 = ", minimum(σ0))
+     println("maximum sigma0 = ", maximum(σ0))
+     imax = argmax(τ0)
+
+     println("index max tau0 = ", imax)
+     println("tau0 at max    = ", τ0[imax])
+     println("sigma0 at max  = ", σ0[imax])
+     println("RSa at max     = ", RSa[imax])
+     println("====================================\n")
     
      # Calculate total shear/normal stress at t = 0:
     σ = σ0 + Δσ
@@ -387,8 +449,10 @@ S = main();
 
 # example of how to plot slip contours (uncomment if desired):
 # pth = "output/bp9-unstructured/2026-07-29T10:51:01.351/Slip_BP9_N_20_.dat"
-# plot_slip(pth)
+#plot_slip(pth)
 
-# examples of how ot plot times series of shear stress:
-# pth = "output/bp9-unstructured/2026-07-29T10:51:01.351/BP9_N_20_0.0_0.0.dat"
-# plot_fault_time_series("slip_rate", pth)
+# examples of how to plot times series of shear stress:
+#pth = "output/bp9-unstructured/2026-07-29T10:51:01.351/BP9_N_20_0.0_0.0.dat"
+#pth = "output/bp9-unstructured/BP9_N_20_0.0_0.0.dat"
+#plot_fault_time_series("slip_rate", pth)
+

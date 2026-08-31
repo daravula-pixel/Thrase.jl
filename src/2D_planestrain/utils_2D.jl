@@ -388,7 +388,8 @@ function plot_fault_time_series(field, filename; indices_only = false)
     else
       plt.plot(T, y)
     end
-    ylabel("slip rate [m/s]")
+    #ylabel("slip rate [m/s]")
+    ylabel("log₁₀ |slip rate [m/s]|")
   elseif field == "shear_stress"
     y = grid[9:sz[1],4]
     plt.plot(T, y)
@@ -508,153 +509,818 @@ end
 
 
 # {{{ Constructor for inp files
+# function read_inp_2d(T, S, filename::String; bc_map=1:10000)
+#   # {{{ Read in the file
+#   f = try
+#     open(filename)
+#   catch
+#     error("InpRead cannot open \"$filename\" ")
+#   end
+#   lines = readlines(f)
+#   close(f)
+#   # }}}
+
+#   # {{{ Read in nodes
+#   str = "NSET=ALLNODES"
+#   linenum = SeekToSubstring(lines, str);
+#   linenum > 0 || error("did not find: $str")
+#   num_nodes = 0
+#   for l = linenum+1:length(lines)
+#     occursin(r"^\s*[0-9]*\s*,.*", lines[l]) ? num_nodes+=1 : break
+#   end
+#   Vx = fill(S(NaN), num_nodes)
+#   Vy = fill(S(NaN), num_nodes)
+#   Vz = fill(S(NaN), num_nodes)
+#   for l = linenum .+ (1:num_nodes)
+#     node_data = split(lines[l], r"\s|,", keepempty=false)
+#     (node_num, node_x, node_y, node_z) = try
+#       (parse(T, node_data[1]),
+#        parse(S, node_data[2]),
+#        parse(S, node_data[3]),
+#        parse(S, node_data[4]))
+#     catch
+#       error("cannot parse line $l: \"$(lines[l])\" ")
+#     end
+
+#     Vx[node_num] = node_x
+#     Vy[node_num] = node_y
+#     Vz[node_num] = node_z
+#   end
+#   # }}}
+
+#   # {{{ Read in Elements
+#   str = "ELEMENT"
+#   linenum = SeekToSubstring(lines, str);
+#   num_elm = 0
+#   while linenum > 0
+#     for l = linenum .+ (1:length(lines))
+#       occursin(r"^\s*[0-9]*\s*,.*", lines[l]) ? num_elm+=1 : break
+#     end
+#     linenum = SeekToSubstring(lines, str; first=linenum+1)
+#   end
+#   num_elm > 0 || error("did not find any element")
+
+#   EToV = fill(T(0), 4, num_elm)
+#   EToBlock = fill(T(0), num_elm)
+#   linenum = SeekToSubstring(lines, str);
+#   while linenum > 0
+#     foo = split(lines[linenum], r"[^0-9]", keepempty=false)
+#     B = parse(T, foo[end])
+#     for l = linenum .+ (1:num_elm)
+#       elm_data = split(lines[l], r"\s|,", keepempty=false)
+#       # read into z-order
+#       (elm_num, elm_v1, elm_v2, elm_v4, elm_v3) = try
+#         (parse(T, elm_data[1]),
+#          parse(T, elm_data[2]),
+#         parse(T, elm_data[3]),
+#         parse(T, elm_data[4]),
+#         parse(T, elm_data[5]))
+#       catch
+#         break
+#       end
+#       EToV[:, elm_num] = [elm_v1, elm_v2, elm_v3, elm_v4]
+#       EToBlock[elm_num] = B
+#     end
+#     linenum = SeekToSubstring(lines, str; first=linenum+1)
+#   end
+#   # }}}
+
+#   # {{{ Determine connectivity
+#   EToF = fill(T(0), 4, num_elm)
+
+#   VsToF = Dict{Tuple{Int64, Int64}, Int64}()
+#   numfaces = 0
+#   for e = 1:num_elm
+#     for lf = 1:4
+#       if lf == 1
+#         Vs = (EToV[1, e], EToV[3, e])
+#       elseif lf == 2
+#         Vs = (EToV[2, e], EToV[4, e])
+#       elseif lf == 3
+#         Vs = (EToV[1, e], EToV[2, e])
+#       elseif lf == 4
+#         Vs = (EToV[3, e], EToV[4, e])
+#       end
+#       if Vs[1] > Vs[2]
+#         Vs = (Vs[2], Vs[1])
+#       end
+#       if haskey(VsToF, Vs)
+#         EToF[lf, e] = VsToF[Vs]
+#       else
+#         numfaces = numfaces + 1
+#         EToF[lf, e] = VsToF[Vs] = numfaces
+#       end
+#     end
+#   end
+#   #}}}
+
+#   # {{{ Read in side set info
+#   FToB = Array{T, 1}(undef, numfaces)
+#   fill!(FToB, BC_LOCKED_INTERFACE)
+#   linenum = SeekToSubstring(lines, "\\*ELSET")
+#   # Our numbering put into exII: 3 2 4 1
+#   inp_to_zorder = [3,  2, 4, 1]
+#   while linenum > 0
+#     foo = split(lines[linenum], r"[^0-9]", keepempty=false)
+#     (bc, face) = try
+#       (parse(T, foo[1]),
+#        parse(T, foo[2]))
+#     catch
+#       error("cannot parse line $linenum: \"$(lines[linenum])\" ")
+#     end
+#     bc = bc_map[bc]
+#     face = inp_to_zorder[face]
+#     for l = linenum+1:length(lines)
+#       if !occursin(r"^\s*[0-9]+", lines[l])
+#         break
+#       end
+#       elms = split(lines[l], r"\s|,", keepempty=false)
+#       for elm in elms
+#         elm = try
+#           parse(T, elm)
+#         catch
+#           error("cannot parse line $linenum: \"$(lines[l])\" ")
+#         end
+#         if bc == 3
+#           bc = BC_LOCKED_INTERFACE
+#         end
+#         FToB[EToF[face, elm]] = bc
+#         @assert (bc == BC_DIRICHLET || bc == BC_NEUMANN ||
+#                  bc == BC_LOCKED_INTERFACE || bc >= BC_JUMP_INTERFACE)
+#       end
+#     end
+#     linenum = SeekToSubstring(lines, "\\*ELSET"; first=linenum+1)
+#   end
+#   # }}}
+
+#   ([Vx Vy]', EToV, EToF, FToB, EToBlock)
+# end
+# read_inp_2d(filename;kw...) = read_inp_2d(Int64, Float64, filename;kw...)
+
+# {{{ Constructor for inp files
 function read_inp_2d(T, S, filename::String; bc_map=1:10000)
-  # {{{ Read in the file
-  f = try
-    open(filename)
-  catch
-    error("InpRead cannot open \"$filename\" ")
-  end
-  lines = readlines(f)
-  close(f)
-  # }}}
 
-  # {{{ Read in nodes
-  str = "NSET=ALLNODES"
-  linenum = SeekToSubstring(lines, str);
-  linenum > 0 || error("did not find: $str")
-  num_nodes = 0
-  for l = linenum+1:length(lines)
-    occursin(r"^\s*[0-9]*\s*,.*", lines[l]) ? num_nodes+=1 : break
-  end
-  Vx = fill(S(NaN), num_nodes)
-  Vy = fill(S(NaN), num_nodes)
-  Vz = fill(S(NaN), num_nodes)
-  for l = linenum .+ (1:num_nodes)
-    node_data = split(lines[l], r"\s|,", keepempty=false)
-    (node_num, node_x, node_y, node_z) = try
-      (parse(T, node_data[1]),
-       parse(S, node_data[2]),
-       parse(S, node_data[3]),
-       parse(S, node_data[4]))
+    # ========================================================================
+    # Read file
+    # ========================================================================
+
+    f = try
+        open(filename)
     catch
-      error("cannot parse line $l: \"$(lines[l])\" ")
+        error("InpRead cannot open \"$filename\"")
     end
 
-    Vx[node_num] = node_x
-    Vy[node_num] = node_y
-    Vz[node_num] = node_z
-  end
-  # }}}
+    lines = readlines(f)
+    close(f)
 
-  # {{{ Read in Elements
-  str = "ELEMENT"
-  linenum = SeekToSubstring(lines, str);
-  num_elm = 0
-  while linenum > 0
-    for l = linenum .+ (1:length(lines))
-      occursin(r"^\s*[0-9]*\s*,.*", lines[l]) ? num_elm+=1 : break
-    end
-    linenum = SeekToSubstring(lines, str; first=linenum+1)
-  end
-  num_elm > 0 || error("did not find any element")
 
-  EToV = fill(T(0), 4, num_elm)
-  EToBlock = fill(T(0), num_elm)
-  linenum = SeekToSubstring(lines, str);
-  while linenum > 0
-    foo = split(lines[linenum], r"[^0-9]", keepempty=false)
-    B = parse(T, foo[end])
-    for l = linenum .+ (1:num_elm)
-      elm_data = split(lines[l], r"\s|,", keepempty=false)
-      # read into z-order
-      (elm_num, elm_v1, elm_v2, elm_v4, elm_v3) = try
-        (parse(T, elm_data[1]),
-         parse(T, elm_data[2]),
-        parse(T, elm_data[3]),
-        parse(T, elm_data[4]),
-        parse(T, elm_data[5]))
-      catch
-        break
-      end
-      EToV[:, elm_num] = [elm_v1, elm_v2, elm_v3, elm_v4]
-      EToBlock[elm_num] = B
-    end
-    linenum = SeekToSubstring(lines, str; first=linenum+1)
-  end
-  # }}}
+    # ========================================================================
+    # Read nodes
+    # ========================================================================
 
-  # {{{ Determine connectivity
-  EToF = fill(T(0), 4, num_elm)
+    node_header = findfirst(
+        line -> startswith(uppercase(strip(line)), "*NODE"),
+        lines
+    )
 
-  VsToF = Dict{Tuple{Int64, Int64}, Int64}()
-  numfaces = 0
-  for e = 1:num_elm
-    for lf = 1:4
-      if lf == 1
-        Vs = (EToV[1, e], EToV[3, e])
-      elseif lf == 2
-        Vs = (EToV[2, e], EToV[4, e])
-      elseif lf == 3
-        Vs = (EToV[1, e], EToV[2, e])
-      elseif lf == 4
-        Vs = (EToV[3, e], EToV[4, e])
-      end
-      if Vs[1] > Vs[2]
-        Vs = (Vs[2], Vs[1])
-      end
-      if haskey(VsToF, Vs)
-        EToF[lf, e] = VsToF[Vs]
-      else
-        numfaces = numfaces + 1
-        EToF[lf, e] = VsToF[Vs] = numfaces
-      end
-    end
-  end
-  #}}}
+    node_header === nothing && error("did not find *NODE section")
 
-  # {{{ Read in side set info
-  FToB = Array{T, 1}(undef, numfaces)
-  fill!(FToB, BC_LOCKED_INTERFACE)
-  linenum = SeekToSubstring(lines, "\\*ELSET")
-  # Our numbering put into exII: 3 2 4 1
-  inp_to_zorder = [3,  2, 4, 1]
-  while linenum > 0
-    foo = split(lines[linenum], r"[^0-9]", keepempty=false)
-    (bc, face) = try
-      (parse(T, foo[1]),
-       parse(T, foo[2]))
-    catch
-      error("cannot parse line $linenum: \"$(lines[linenum])\" ")
-    end
-    bc = bc_map[bc]
-    face = inp_to_zorder[face]
-    for l = linenum+1:length(lines)
-      if !occursin(r"^\s*[0-9]+", lines[l])
-        break
-      end
-      elms = split(lines[l], r"\s|,", keepempty=false)
-      for elm in elms
-        elm = try
-          parse(T, elm)
-        catch
-          error("cannot parse line $linenum: \"$(lines[l])\" ")
+    node_lines = Int[]
+
+    l = node_header + 1
+
+    while l <= length(lines)
+
+        line = strip(lines[l])
+
+        if startswith(line, "*")
+            break
         end
-        if bc == 3
-          bc = BC_LOCKED_INTERFACE
-        end
-        FToB[EToF[face, elm]] = bc
-        @assert (bc == BC_DIRICHLET || bc == BC_NEUMANN ||
-                 bc == BC_LOCKED_INTERFACE || bc >= BC_JUMP_INTERFACE)
-      end
-    end
-    linenum = SeekToSubstring(lines, "\\*ELSET"; first=linenum+1)
-  end
-  # }}}
 
-  ([Vx Vy]', EToV, EToF, FToB, EToBlock)
+        if isempty(line)
+            l += 1
+            continue
+        end
+
+        push!(node_lines, l)
+        l += 1
+    end
+
+
+    # Find largest node number
+    max_node = 0
+
+    for l in node_lines
+
+        data = split(lines[l], r"\s|,", keepempty=false)
+
+        node_num = parse(T, data[1])
+
+        max_node = max(max_node, Int(node_num))
+    end
+
+
+    Vx = fill(S(NaN), max_node)
+    Vy = fill(S(NaN), max_node)
+    Vz = fill(S(NaN), max_node)
+
+
+    for l in node_lines
+
+        data = split(lines[l], r"\s|,", keepempty=false)
+
+        try
+
+            node_num = parse(T, data[1])
+            node_x   = parse(S, data[2])
+            node_y   = parse(S, data[3])
+            node_z   = length(data) >= 4 ? parse(S, data[4]) : S(0)
+
+            Vx[node_num] = node_x
+            Vy[node_num] = node_y
+            Vz[node_num] = node_z
+
+        catch err
+
+            error(
+                "cannot parse node line $l: \"$(lines[l])\"\n" *
+                "Original error: $err"
+            )
+
+        end
+    end
+
+
+    # ========================================================================
+    # Read element sections
+    #
+    # T3D2 = boundary/fault line elements
+    # CPS4 = actual 2-D quadrilateral elements
+    # ========================================================================
+
+    element_headers = Int[]
+
+    for l = 1:length(lines)
+
+        line = uppercase(strip(lines[l]))
+
+        if startswith(line, "*ELEMENT")
+            push!(element_headers, l)
+        end
+
+    end
+
+    isempty(element_headers) &&
+        error("did not find any *ELEMENT sections")
+
+
+    # ========================================================================
+    # Store T3D2 elements
+    #
+    # raw T3D2 element ID -> (node1,node2)
+    # ========================================================================
+
+    t3d2 = Dict{T,Tuple{T,T}}()
+
+
+    # ========================================================================
+    # Store CPS4 elements
+    #
+    # raw CPS4 element ID -> connectivity
+    # ========================================================================
+
+    cps4_raw_ids = T[]
+    cps4_connectivity = Vector{NTuple{4,T}}()
+
+
+    for h in element_headers
+
+        header = uppercase(strip(lines[h]))
+
+        compact_header = replace(header, r"\s" => "")
+
+        is_cps4 = occursin("TYPE=CPS4", compact_header)
+        is_t3d2 = occursin("TYPE=T3D2", compact_header)
+
+        l = h + 1
+
+        while l <= length(lines)
+
+            line = strip(lines[l])
+
+            if startswith(line, "*")
+                break
+            end
+
+            if isempty(line)
+                l += 1
+                continue
+            end
+
+            data = split(lines[l], r"\s|,", keepempty=false)
+
+            try
+
+                if is_t3d2
+
+                    # --------------------------------------------------------
+                    # T3D2
+                    #
+                    # element_id, node1, node2
+                    # --------------------------------------------------------
+
+                    if length(data) < 3
+                        error("T3D2 element has fewer than 2 nodes")
+                    end
+
+                    elm_id = parse(T, data[1])
+                    v1     = parse(T, data[2])
+                    v2     = parse(T, data[3])
+
+                    t3d2[elm_id] = (v1, v2)
+
+
+                elseif is_cps4
+
+                    # --------------------------------------------------------
+                    # CPS4
+                    #
+                    # element_id, node1, node2, node3, node4
+                    # --------------------------------------------------------
+
+                    if length(data) < 5
+                        error("CPS4 element has fewer than 4 nodes")
+                    end
+
+                    elm_id = parse(T, data[1])
+
+                    v1 = parse(T, data[2])
+                    v2 = parse(T, data[3])
+                    v3 = parse(T, data[4])
+                    v4 = parse(T, data[5])
+
+                    push!(cps4_raw_ids, elm_id)
+                    push!(
+                      cps4_connectivity,
+                          (v2, v1, v3, v4)
+                    )
+                    # Same ordering conversion used previously
+                    # Reorder nodes so every quadrilateral has positive orientation
+                    
+
+                end
+
+            catch err
+
+                error(
+                    "cannot parse element line $l: " *
+                    "\"$(lines[l])\"\n" *
+                    "Original error: $err"
+                )
+
+            end
+
+            l += 1
+        end
+    end
+
+
+    # ========================================================================
+    # Check elements
+    # ========================================================================
+
+    num_elm = length(cps4_raw_ids)
+
+    num_elm > 0 ||
+        error("did not find any CPS4 elements")
+
+    @show num_elm
+    @show length(t3d2)
+
+
+    # ========================================================================
+    # Create compact CPS4 element numbering
+    #
+    # Raw IDs:
+    #
+    # 605, 606, ..., 16440
+    #
+    # become:
+    #
+    # 1, 2, ..., 15836
+    # ========================================================================
+
+    raw_to_compact = Dict{T,T}()
+
+    for e = 1:num_elm
+
+        raw_id = cps4_raw_ids[e]
+
+        raw_to_compact[raw_id] = T(e)
+
+    end
+
+
+    # ========================================================================
+    # Construct EToV
+    # ========================================================================
+
+    EToV = fill(T(0), 4, num_elm)
+
+    for e = 1:num_elm
+        EToV[:,e] = collect(cps4_connectivity[e])
+    end
+
+
+    # ========================================================================
+    # Read ELSETs
+    #
+    # Each ELSET contains raw Abaqus element IDs.
+    #
+    # Examples:
+    #
+    # left
+    # right
+    # bottom
+    # surface
+    # fault
+    # upper
+    # lower
+    # ========================================================================
+
+    elsets = Dict{String,Vector{T}}()
+
+    l = 1
+
+    while l <= length(lines)
+
+        line = strip(lines[l])
+
+        if startswith(uppercase(line), "*ELSET")
+
+            m = match(
+                r"ELSET\s*=\s*([^,\s]+)",
+                line
+            )
+
+            if m !== nothing
+
+                name = lowercase(strip(m.captures[1]))
+
+                members = T[]
+
+                l += 1
+
+                while l <= length(lines)
+
+                    nextline = strip(lines[l])
+
+                    if startswith(nextline, "*")
+                        break
+                    end
+
+                    if isempty(nextline)
+
+                        l += 1
+                        continue
+
+                    end
+
+                    vals = split(
+                        nextline,
+                        r"\s|,",
+                        keepempty=false
+                    )
+
+                    for val in vals
+
+                        try
+                            push!(members, parse(T,val))
+                        catch err
+
+                            error(
+                                "cannot parse ELSET entry on line $l: " *
+                                "\"$(lines[l])\"\n" *
+                                "Original error: $err"
+                            )
+
+                        end
+                    end
+
+                    l += 1
+                end
+
+                elsets[name] = members
+
+                continue
+            end
+        end
+
+        l += 1
+    end
+
+
+    # ========================================================================
+    # Diagnostics
+    # ========================================================================
+
+    println("ELSETs found:")
+
+    for (name, members) in elsets
+        println(name, " : ", length(members), " members")
+    end
+
+
+    # ========================================================================
+    # Determine domains
+    #
+    # upper -> domain 1
+    # lower -> domain 2
+    #
+    # The ELSETs contain RAW Abaqus element IDs, so translate them
+    # through raw_to_compact.
+    # ========================================================================
+
+    EToDomain = fill(T(0), num_elm)
+
+
+    if haskey(elsets, "upper")
+
+        for raw_id in elsets["upper"]
+
+            if haskey(raw_to_compact, raw_id)
+
+                e = raw_to_compact[raw_id]
+
+                EToDomain[e] = T(1)
+
+            end
+        end
+    end
+
+
+    if haskey(elsets, "lower")
+
+        for raw_id in elsets["lower"]
+
+            if haskey(raw_to_compact, raw_id)
+
+                e = raw_to_compact[raw_id]
+
+                EToDomain[e] = T(2)
+
+            end
+        end
+    end
+
+
+    @show count(EToDomain .== 1)
+    @show count(EToDomain .== 2)
+
+
+    for e = 1:num_elm
+
+        if EToDomain[e] == 0
+
+            error(
+                "CPS4 element $e does not belong to " *
+                "either upper or lower domain"
+            )
+
+        end
+    end
+
+
+    # ========================================================================
+    # Determine connectivity
+    # ========================================================================
+
+    EToF = fill(T(0), 4, num_elm)
+
+    VsToF = Dict{Tuple{T,T},T}()
+
+    numfaces = 0
+
+
+    for e = 1:num_elm
+
+        faces = (
+            (EToV[1,e], EToV[3,e]),
+            (EToV[2,e], EToV[4,e]),
+            (EToV[1,e], EToV[2,e]),
+            (EToV[3,e], EToV[4,e])
+        )
+
+        for lf = 1:4
+
+            v1, v2 = faces[lf]
+
+            if v1 > v2
+                v1, v2 = v2, v1
+            end
+
+            key = (v1,v2)
+
+            if haskey(VsToF,key)
+
+                EToF[lf,e] = VsToF[key]
+
+            else
+
+                numfaces += 1
+
+                VsToF[key] = T(numfaces)
+
+                EToF[lf,e] = T(numfaces)
+
+            end
+        end
+    end
+
+
+    # ========================================================================
+    # Boundary-condition values
+    # ========================================================================
+
+    boundary_bc = Dict{String,T}(
+        "surface" => T(BC_DIRICHLET),
+        "right"   => T(BC_NEUMANN),
+        "bottom"  => T(BC_NEUMANN),
+        "left"    => T(BC_NEUMANN),
+        "fault"   => T(7)
+    )
+
+
+    # ========================================================================
+    # Initialize faces
+    # ========================================================================
+
+    FToB = fill(T(BC_LOCKED_INTERFACE), numfaces)
+
+
+    # ========================================================================
+    # Convert node pair -> face
+    # ========================================================================
+
+    nodepair_to_face = Dict{Tuple{T,T},T}()
+
+    for (key,f) in VsToF
+
+        nodepair_to_face[key] = f
+
+    end
+
+
+    # ========================================================================
+    # Apply boundary conditions
+    #
+    # The named ELSETs contain T3D2 ELEMENT IDs.
+    #
+    # Therefore:
+    #
+    # ELSET member
+    #       ↓
+    # T3D2 node pair
+    #       ↓
+    # CPS4 face
+    #       ↓
+    # FToB
+    # ========================================================================
+
+    for (name,bc) in boundary_bc
+
+        if !haskey(elsets,name)
+
+            error(
+                "did not find required ELSET \"$name\""
+            )
+
+        end
+
+
+        for t3d2_id in elsets[name]
+
+            if !haskey(t3d2,t3d2_id)
+
+                error(
+                    "ELSET \"$name\" references T3D2 element " *
+                    "$t3d2_id, but that T3D2 element was not found"
+                )
+
+            end
+
+
+            v1,v2 = t3d2[t3d2_id]
+
+
+            if v1 > v2
+                key = (v2,v1)
+            else
+                key = (v1,v2)
+            end
+
+
+            if !haskey(nodepair_to_face,key)
+
+                error(
+                    "could not find CPS4 face corresponding to " *
+                    "T3D2 element $t3d2_id " *
+                    "with nodes ($v1,$v2) " *
+                    "in ELSET \"$name\""
+                )
+
+            end
+
+
+            f = nodepair_to_face[key]
+
+            #FToB[f] = bc
+            if name == "fault"
+
+              # BP9: rate-and-state friction extends to Wf = 40 km down dip.
+              # Below Wf, the fault is velocity-prescribed.
+
+              Wf  = S(40.0)
+              dip = S(30.0)
+
+              x1 = Vx[v1]
+              y1 = Vy[v1]
+
+              x2 = Vx[v2]
+              y2 = Vy[v2]
+
+              # Midpoint vertical depth
+              depth_mid = -(y1 + y2) / 2
+
+              # Midpoint distance down dip
+              xd_mid = depth_mid / sind(dip)
+
+              # Assign fault type
+              if xd_mid < Wf
+                  FToB[f] = T(7)   # RS_FAULT
+              else
+                  FToB[f] = T(8)   # VP_FAULT
+              end
+
+              # Physical length of this T3D2 fault segment
+              segment_length = sqrt(
+                  (x2 - x1)^2 +
+                  (y2 - y1)^2
+              )
+
+              println(
+                  "fault T3D2 = ", t3d2_id,
+                  " | segment length = ", segment_length, " km",
+                  " | down-dip midpoint = ", xd_mid, " km",
+                  " | FToB = ", FToB[f]
+              )
+
+            else
+
+                FToB[f] = bc
+
+            end
+
+        end
+    end
+
+
+    # ========================================================================
+    # Diagnostics
+    # ========================================================================
+
+    println()
+    println("Mesh successfully read.")
+
+    @show size(EToV)
+    @show size(EToF)
+    @show length(FToB)
+
+    println()
+    println("Boundary faces:")
+
+    @show count(FToB .== T(BC_DIRICHLET))
+    @show count(FToB .== T(BC_NEUMANN))
+    @show count(FToB .== T(7))
+    @show count(FToB .== T(8))
+    @show count(FToB .== T(BC_LOCKED_INTERFACE))
+
+
+    # ========================================================================
+    # Return
+    # ========================================================================
+
+    return (
+        [Vx Vy]',
+        EToV,
+        EToF,
+        FToB,
+        EToDomain
+    )
+
 end
-read_inp_2d(filename;kw...) = read_inp_2d(Int64, Float64, filename;kw...)
+read_inp_2d(filename; kw...) =
+    read_inp_2d(Int64, Float64, filename; kw...)
 
 function SeekToSubstring(lines, substring; first=1)
   for l = first:length(lines)

@@ -40,6 +40,10 @@ function odefun(dψV, ψδ, p, t)
   #fault_nodes = p.fault_nodes
   psi = p.psi
 
+  #new code as a check
+  if t >= 314.8
+    println("Time t = ", t, " | min(ψ) = ", minimum(ψδ[1:p.FToδstarts[end]-1]))
+  end
 
   nelems = length(lop)
   nfaces = size(FToE, 2)
@@ -163,6 +167,12 @@ function odefun(dψV, ψδ, p, t)
         τ[δn] = Δτ[δn] + τ0[δn]
         σ[δn] = Δσ[δn] + σ0[δn]
 
+        if isnan(τ[δn]) || isnan(σ[δn]) #new code as check
+          println("NaN detected in stress at t = ", t, " at node ", δn)
+          reject_step[1] = true
+          return
+        end
+
         if isnan(τ[δn])
           @show "uh oh"
           reject_step[1] = true
@@ -170,7 +180,8 @@ function odefun(dψV, ψδ, p, t)
         end
         VR = abs(τ[δn] / η)
         VL = -VR
-        Vn = V1[n]
+        #Vn = V1[n]
+        Vn = V1[δn]
         σnbar = max(σmin, σ[δn])
         (Vnew, ~, iter) = newtbndv((V) -> rateandstate(V, ψ[δn], σnbar,
                                                        τ[δn], η, RSa[δn],
@@ -182,17 +193,56 @@ function odefun(dψV, ψδ, p, t)
           show_val = false
           #@show (ψ[δn], σ[δn], τ[δn], σ[δn], η, RSa[δn], RSV0)
         end
+        # if isnan(Vnew) || iter < 0
+        #  #@show (VL, VR, V[δn], Vnew, τ[δn], σ[δn], η, RSa[δn], RSV0)
+        #   println("V reject")
+        #   Vnew = 1e10
+        #   reject_step[1] = true
+        #   return
+        #   #error()
+        # end
         if isnan(Vnew) || iter < 0
-         #@show (VL, VR, V[δn], Vnew, τ[δn], σ[δn], η, RSa[δn], RSV0)
-          println("V reject")
-          Vnew = 1e10
+
+          println("\n================ V REJECT DEBUG ================")
+
+          println("t         = ", t)
+          println("fault DOF = ", δn)
+
+          println("Vnew      = ", Vnew)
+          println("iter      = ", iter)
+
+          println("tau0      = ", τ0[δn])
+          println("Δtau      = ", Δτ[δn])
+          println("tau       = ", τ[δn])
+          
+          println("sigma     = ", σ[δn])
+          println("sigma0    = ", σ0[δn])
+          println("Δsigma    = ", Δσ[δn])
+          println("sigma_bar = ", σnbar)
+
+          println("psi       = ", ψ[δn])
+          println("RSa       = ", RSa[δn])
+
+          println("eta       = ", η)
+          println("RSV0      = ", RSV0)
+
+          println("rateandstate(VL) = ",
+                  rateandstate(VL, ψ[δn], σnbar,
+                              τ[δn], η, RSa[δn], RSV0))
+
+          println("rateandstate(VR) = ",
+                  rateandstate(VR, ψ[δn], σnbar,
+                              τ[δn], η, RSa[δn], RSV0))
+
+          println("================================================\n")
+
           reject_step[1] = true
           return
-          #error()
         end
     
   
         V1[δn] = Vnew #TODO: fix to not do friction at depth
+
         dψ[δn] = (RSb * RSV0 / RSDc) * (exp((RSf0-ψ[δn]) / RSb) - abs(V1[δn])
                                         / RSV0)
          if !isfinite(dψ[δn])
@@ -245,6 +295,43 @@ function odefun(dψV, ψδ, p, t)
         
         τ[δn] = Δτ[δn] + τ0[δn]
         σ[δn] = Δσ[δn] + σ0[δn]
+
+        if δn == 43 && t < 0.2
+            println("\n========== DOF 43 STRESS ==========")
+            println("t       = ", t)
+
+            println("tau0    = ", τ0[δn])
+            println("Δtau    = ", Δτ[δn])
+            println("tau     = ", τ[δn])
+
+            println("sigma0  = ", σ0[δn])
+            println("Δsigma  = ", Δσ[δn])
+            println("sigma   = ", σ[δn])
+
+            println("psi     = ", ψ[δn])
+            println("===================================\n")
+        end
+
+        #debugging 
+        # if abs(Vnew) > 1.0
+        #     println("\n========== LARGE VELOCITY ==========")
+        #     println("t      = ", t)
+        #     println("δn     = ", δn)
+        #     println("Vnew   = ", Vnew)
+
+        #     println("tau0   = ", τ0[δn])
+        #     println("Δtau   = ", Δτ[δn])
+        #     println("tau    = ", τ[δn])
+
+        #     println("sigma0 = ", σ0[δn])
+        #     println("Δsigma = ", Δσ[δn])
+        #     println("sigma  = ", σ[δn])
+
+        #     println("psi    = ", ψ[δn])
+        #     println("RSa    = ", RSa[δn])
+        #     println("====================================\n")
+        # end
+        #end of deubbging 
         V1[δn] = Vp
 
       end
@@ -255,7 +342,46 @@ function odefun(dψV, ψδ, p, t)
   end
 
   nothing
+
+  # Place at the end of odefun right before returning, new code 
+  # if maximum(abs.(dψV)) > 1e10
+  #   println("Derivative blow-up detected at t = ", t)
+  #   p.reject_step[1] = true
+  # end
+
+  maxval, maxidx = findmax(abs.(dψV))
+
+  #og deriv blow up code
+  # if maxval > 1e10
+
+  #   println("\n============= DERIVATIVE BLOW-UP =============")
+  #   println("t               = ", t)
+  #   println("maximum |dψV|   = ", maxval)
+  #   println("index           = ", maxidx)
+  #   println("actual value    = ", dψV[maxidx])
+  #   println("length(dψV)     = ", length(dψV))
+  #   println("==============================================\n")
+
+  #   p.reject_step[1] = true
+  # end
+
+  # if abs(dψ[43]) > 1e10
+  #   println("\n========== dpsi43 BLOW-UP ==========")
+  #   println("t        = ", t)
+  #   println("psi[43]  = ", ψ[43])
+  #   println("V1[43]   = ", V1[43])
+  #   println("dpsi[43] = ", dψ[43])
+  #   println("RSa[43]  = ", RSa[43])
+  #   println("tau[43]  = ", τ[43])
+  #   println("sigma[43]= ", σ[43])
+  #   println("====================================\n")
+
+  #   reject_step[1] = true
+  # end
+
 end
+
+
 
 
 

@@ -1,3 +1,4 @@
+
 // ------------------------
 // Parameters (km)
 // ------------------------
@@ -10,6 +11,11 @@ Width = 100;
 
 h_fault = 0.5;
 h_far   = 5;
+
+// BP9 RS -> VP transition
+Wf = 40;                  // km down dip
+Wf_x = Width/2 + Wf*Cos(Dip);
+Wf_y = -Wf*Sin(Dip);
 
 // ------------------------
 // Points
@@ -24,6 +30,9 @@ Point(4) = {Shift,-Depth,0,h_far}; // bottom corners
 Point(5) = {Width/2, 0, 0, h_fault};
 Point(6) = {Width/2+Shift, - Depth, 0, h_far}; //fault endpoints
 
+// Exact BP9 RS/VP transition:
+// 40 km down dip = 20 km vertical depth
+Point(7) = {Wf_x, Wf_y, 0, h_fault};
 
 // Outer boundary
 Line(1) = {1,5};
@@ -34,13 +43,16 @@ Line(5) = {2,3};
 Line(6) = {4,1};
 
 // Fault (30° dip)
-Line(10) = {5,6};
+Line(10) = {5,7};
+
+// VP portion: 40 km down dip -> bottom
+Line(11) = {7,6};
 
 // Split into two convex surfaces
-Curve Loop(1) = {1,10,4,6};
+Curve Loop(1) = {1,10,11,4,6};
 Plane Surface(1) = {1};
 
-Curve Loop(2) = {2,5,3,-10};
+Curve Loop(2) = {2,5,3,-11,-10};
 Plane Surface(2) = {2};
 
 // ------------------------
@@ -78,7 +90,9 @@ Physical Curve("right")   = {5};
 Physical Curve("bottom")  = {3,4};
 Physical Curve("left")    = {6};
 
-Physical Curve("fault")   = {10};
+// Both pieces remain part of the same Abaqus "fault" ELSET.
+// read_inp_2d will assign each T3D2 segment as RS=7 or VP=8.
+Physical Curve("fault")   = {10,11};
 
 Physical Surface("upper") = {1};
 Physical Surface("lower") = {2};

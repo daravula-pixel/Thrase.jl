@@ -5,7 +5,7 @@
 # path to store output
 pth =./output/bp9-unstructured/
 # name of mesh file (make sure this matches psi below):
-meshfile=BP9_2D_30d.inp
+meshfile=BP9_30dip_final.inp
 # details of output data:
 # number of grid points in each dimension ON EACH ELEMENT/BLOCK
 # make sure to resolve h* and l_b; should be written as integer.
@@ -13,7 +13,7 @@ Nx = 20
 Nz = 20
 #
 # how many years to simulate
-sim_years = 8000
+sim_years = 100
 #
 # loading rate
 Vp = 1e-9
